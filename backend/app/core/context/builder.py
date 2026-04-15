@@ -44,6 +44,8 @@ def build_context(memories: Sequence[MemoryDocument]) -> dict[str, Any]:
 		else:
 			context["tasks"].append(content)
 
+	context["completed"] = context["completed"][:3]
+	context["tasks"] = context["tasks"][:3]
 	if context["tasks"]:
 		context["suggestion"] = context["tasks"][0]
 	else:
@@ -73,8 +75,6 @@ def format_context(context: Mapping[str, Any]) -> str:
 	completed = list(context.get("completed", []))
 	pending = list(context.get("tasks", []))
 	suggestion = context.get("suggestion")
-	completed = completed[:5]
-	pending = pending[:5]
 
 	if project:
 		formatted += f"Current Project:\n{project}\n\n"

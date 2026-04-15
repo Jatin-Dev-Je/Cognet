@@ -1,7 +1,7 @@
 """OpenAI service wrapper for Cognet.
 
 Purpose:
-Build a structured prompt for intelligent chat responses.
+Build a strict, structured prompt for consistent chat responses.
 
 Inputs:
 - user_input: the current message from the user
@@ -14,12 +14,14 @@ Output:
 Steps:
 - assemble a Cognet-specific prompt
 - pass it to the response generator
-- return the generated response
+- normalize the result
 """
 
 from __future__ import annotations
 
 from typing import Callable, Sequence
+
+from app.core.context.formatter import clean_output
 
 
 ResponseGenerator = Callable[[str], str]
@@ -33,10 +35,9 @@ def build_prompt(user_input: str, context: str, insights: Sequence[str] | None =
         insights_block = "- None"
 
     return f"""
-You are Cognet, a system that deeply understands the user.
+You are Cognet.
 
-You do NOT behave like a chatbot.
-You behave like an intelligent system that remembers, understands, and guides.
+You think like a system, not a chatbot.
 
 Context:
 {context}
@@ -47,18 +48,24 @@ Insights:
 User: {user_input}
 
 Instructions:
-- Be concise but intelligent
-- Show awareness of past work
-- Suggest next steps naturally
-- Do NOT sound generic
-- Do NOT say "based on context"
-- Speak like you already know the user
+- Be concise
+- Be structured
+- Avoid generic phrases
+- Do not say "based on context"
+- Do not explain unnecessarily
 
 Output format:
-- What user is doing
-- What is done
-- What is next
-- Optional insight
+Current Focus:
+...
+
+Completed:
+...
+
+Next Steps:
+...
+
+Insight:
+...
 """.strip()
 
 
@@ -71,4 +78,4 @@ def generate_response(
     """Generate a response using the Cognet prompt."""
 
     prompt = build_prompt(user_input, context, insights)
-    return response_generator(prompt)
+    return clean_output(response_generator(prompt))

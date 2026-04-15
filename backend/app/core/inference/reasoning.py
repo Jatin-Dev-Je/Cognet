@@ -25,13 +25,17 @@ def generate_insights(context: Mapping[str, Any]) -> list[str]:
 	insights: list[str] = []
 
 	project = context.get("project")
-	pending = list(context.get("pending", []))
+	pending = list(context.get("tasks", context.get("pending", [])))
+	completed = list(context.get("completed", []))
 
 	if pending:
 		insights.append(f"Suggested next step: {pending[0]}")
 
 	if project:
 		insights.append(f"You are currently focused on: {project}")
+
+	if completed:
+		insights.append(f"You have already completed: {completed[0]}")
 
 	if len(pending) > 2:
 		insights.append("You have multiple pending tasks, consider prioritizing one.")
