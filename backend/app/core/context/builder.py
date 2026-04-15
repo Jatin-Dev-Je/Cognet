@@ -1,24 +1,21 @@
 """Context Builder for Cognet.
 
 Purpose:
-Convert raw memories into structured context for downstream reasoning.
-
-Inputs:
-- memories: relevant memory documents
+Convert structured memories into organized context.
 
 Output:
-- dict: structured context with project, completed work, pending work, and suggestions
-
-Steps:
-- inspect each memory
-- classify it into project, completed, or pending work
-- derive a simple suggestion from the pending items
-- format the structured data for AI consumption
+{
+	project: str
+	completed: list
+	tasks: list
+}
 """
 
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
+
+from app.core.inference.classifier import classify_memory
 
 
 MemoryDocument = Mapping[str, Any]
@@ -30,7 +27,7 @@ def build_context(memories: Sequence[MemoryDocument]) -> dict[str, Any]:
 	context: dict[str, Any] = {
 		"project": None,
 		"completed": [],
-		"pending": [],
+		"tasks": [],
 	}
 
 	for memory in memories:
@@ -38,17 +35,17 @@ def build_context(memories: Sequence[MemoryDocument]) -> dict[str, Any]:
 		if not content:
 			continue
 
-		lowered = content.lower()
+		memory_type = str(memory.get("type") or classify_memory(content))
 
-		if "building" in lowered or "working on" in lowered:
+		if memory_type == "project":
 			context["project"] = content
-		elif "done" in lowered or "completed" in lowered:
+		elif memory_type == "completed":
 			context["completed"].append(content)
 		else:
-			context["pending"].append(content)
+			context["tasks"].append(content)
 
-	if context["pending"]:
-		context["suggestion"] = context["pending"][0]
+	if context["tasks"]:
+		context["suggestion"] = context["tasks"][0]
 	else:
 		context["suggestion"] = "Continue the current project with the next logical step."
 
@@ -62,7 +59,7 @@ def format_context(context: Mapping[str, Any]) -> str:
 
 	project = context.get("project")
 	completed = list(context.get("completed", []))
-	pending = list(context.get("pending", []))
+	pending = list(context.get("tasks", []))
 	suggestion = context.get("suggestion")
 
 	if project:

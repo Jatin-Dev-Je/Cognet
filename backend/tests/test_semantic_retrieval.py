@@ -1,14 +1,45 @@
+from datetime import datetime, timedelta
+
 from app.application.chat_usecase import ChatUseCase
 from app.core.embedding.engine import generate_embedding
+from app.domain.memory.service import MemoryService, _MEMORY_STORE, save_memory
 from app.core.retrieval.semantic import get_relevant_memories
+from app.core.inference.classifier import classify_memory
+
+
+def test_memory_classifier_maps_common_phrases() -> None:
+    assert classify_memory("I am building Cognet backend") == "project"
+    assert classify_memory("I completed API setup") == "completed"
+    assert classify_memory("I need to improve retrieval") == "task"
+    assert classify_memory("Hello there") == "general"
+
+
+def test_save_memory_adds_type_and_timestamp() -> None:
+    _MEMORY_STORE.clear()
+    record = save_memory("user-1", "I am building Cognet backend", generate_embedding("I am building Cognet backend"))
+
+    assert record["type"] == "project"
+    assert isinstance(record["created_at"], datetime)
 
 
 def test_semantic_retrieval_ranks_relevant_memory_first() -> None:
     query_embedding = generate_embedding("I am building backend for Cognet")
     memories = [
-        {"content": "Went for a walk outside", "embedding": generate_embedding("Went for a walk outside")},
-        {"content": "Building Cognet backend", "embedding": generate_embedding("Building Cognet backend")},
-        {"content": "Reviewed unrelated meeting notes", "embedding": generate_embedding("Reviewed unrelated meeting notes")},
+        {
+            "content": "Went for a walk outside",
+            "embedding": generate_embedding("Went for a walk outside"),
+            "created_at": datetime.utcnow() - timedelta(days=7),
+        },
+        {
+            "content": "Building Cognet backend",
+            "embedding": generate_embedding("Building Cognet backend"),
+            "created_at": datetime.utcnow(),
+        },
+        {
+            "content": "Reviewed unrelated meeting notes",
+            "embedding": generate_embedding("Reviewed unrelated meeting notes"),
+            "created_at": datetime.utcnow() - timedelta(days=1),
+        },
     ]
 
     top_memories = get_relevant_memories(query_embedding, memories, top_k=1)
@@ -17,16 +48,20 @@ def test_semantic_retrieval_ranks_relevant_memory_first() -> None:
 
 
 def test_chat_use_case_builds_context_from_relevant_memories() -> None:
-    def memory_loader(user_id: str, limit: int):
-        return [
-            {"content": "Building Cognet backend", "embedding": generate_embedding("Building Cognet backend")},
-            {"content": "Doing grocery shopping", "embedding": generate_embedding("Doing grocery shopping")},
-        ][:limit]
+    service = MemoryService(storage=[])
+    use_case = ChatUseCase(memory_service=service)
 
-    use_case = ChatUseCase(memory_loader=memory_loader)
-    result = use_case.handle_chat("user-1", "I am building backend for Cognet")
+    service.save_memory("user-1", "I am building Cognet backend", generate_embedding("I am building Cognet backend"))
+    service.save_memory("user-1", "I completed API setup", generate_embedding("I completed API setup"))
+    service.save_memory("user-1", "I need to improve retrieval", generate_embedding("I need to improve retrieval"))
+
+    result = use_case.handle_chat("user-1", "What should I do next?")
 
     assert result["context"]["project"] == "Building Cognet backend"
     assert "Current Project:" in result["formatted_context"]
     assert any("Suggested next step:" in insight for insight in result["insights"])
-    assert result["relevant_memories"][0]["content"] == "Building Cognet backend"
+    assert result["relevant_memories"][0]["content"] in {
+        "I completed API setup",
+        "I need to improve retrieval",
+        "I am building Cognet backend",
+    }

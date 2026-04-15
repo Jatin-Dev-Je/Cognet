@@ -1,25 +1,18 @@
-"""Semantic Retrieval Engine for Cognet.
+"""Hybrid Retrieval Engine for Cognet.
 
 Purpose:
-Retrieve the most relevant memories using embedding similarity.
-
-Inputs:
-- query_embedding: vector representation of the current query
-- memories: iterable of memory documents with stored embeddings
-- top_k: number of memories to return
-
-Output:
-- list of the top relevant memory documents in descending relevance order
+Retrieve relevant memories using semantic similarity and recency scoring.
 
 Steps:
-- compare the query embedding with each memory embedding
-- score each memory using cosine similarity
-- sort by score
-- return the top matches
+1. compute cosine similarity
+2. compute recency score
+3. combine scores
+4. sort and return top results
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from math import sqrt
 from typing import Any, Mapping, Sequence
 
@@ -28,7 +21,7 @@ MemoryDocument = Mapping[str, Any]
 
 
 def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
-	"""Return cosine similarity between two vectors."""
+	"""Compute cosine similarity between two vectors."""
 
 	if len(a) != len(b):
 		raise ValueError("Embedding vectors must have the same length.")
@@ -43,6 +36,25 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
 	return dot_product / (magnitude_a * magnitude_b)
 
 
+def compute_score(memory: MemoryDocument, similarity: float) -> float:
+	"""Compute a hybrid score combining similarity and recency."""
+
+	created_at = memory.get("created_at")
+	recency = 0.0
+
+	if isinstance(created_at, str):
+		try:
+			created_at = datetime.fromisoformat(created_at)
+		except ValueError:
+			created_at = None
+
+	if isinstance(created_at, datetime):
+		time_difference = abs((datetime.utcnow() - created_at).total_seconds())
+		recency = 1 / (1 + time_difference)
+
+	return 0.7 * similarity + 0.3 * recency
+
+
 def _extract_embedding(memory: MemoryDocument) -> Sequence[float]:
 	embedding = memory.get("embedding")
 	if not isinstance(embedding, Sequence):
@@ -55,7 +67,7 @@ def get_relevant_memories(
 	memories: Sequence[MemoryDocument],
 	top_k: int = 5,
 ) -> list[dict[str, Any]]:
-	"""Return the top_k most relevant memories for the query."""
+	"""Retrieve the top relevant memories using hybrid scoring."""
 
 	scored_memories: list[tuple[float, dict[str, Any]]] = []
 
@@ -64,7 +76,8 @@ def get_relevant_memories(
 		if len(memory_embedding) != len(query_embedding):
 			continue
 
-		score = cosine_similarity(query_embedding, memory_embedding)
+		similarity = cosine_similarity(query_embedding, memory_embedding)
+		score = compute_score(memory, similarity)
 		scored_memories.append((score, dict(memory)))
 
 	scored_memories.sort(key=lambda item: item[0], reverse=True)

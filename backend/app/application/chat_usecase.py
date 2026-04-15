@@ -1,38 +1,32 @@
-"""Chat Use Case for Cognet.
+"""Chat Use Case Flow for Cognet.
 
 Purpose:
-Orchestrate the retrieval-aware chat flow.
-
-Inputs:
-- user_id: the active user identifier
-- message: the current chat message
-- memory_loader: callable that returns recent memories
-
-Output:
-- structured chat result with relevant memories, context, and a response
+Save memory, retrieve relevant memories, build structured context, and generate a guided response.
 
 Steps:
-- convert the message to an embedding
-- load recent memories for the user
-- retrieve the most relevant memories
-- build a context string
-- generate a response payload
+1. generate embedding
+2. save memory
+3. fetch memories
+4. run hybrid retrieval
+5. build structured context
+6. format context
+7. call LLM
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 from app.core.context.builder import build_context, format_context
 from app.core.embedding.engine import generate_embedding
 from app.core.inference.reasoning import generate_insights
 from app.core.retrieval.semantic import get_relevant_memories
+from app.domain.memory.service import MemoryService
 from app.infrastructure.ai.openai_service import generate_response
 
 
 MemoryDocument = dict[str, Any]
-MemoryLoader = Callable[[str, int], Sequence[MemoryDocument]]
 ResponseGenerator = Callable[[str], str]
 
 
@@ -42,24 +36,11 @@ def default_response_generator(prompt: str) -> str:
 	return prompt
 
 
-def get_recent_memories(
-	user_id: str,
-	limit: int = 50,
-	memory_loader: MemoryLoader | None = None,
-) -> list[MemoryDocument]:
-	"""Load the latest memories for a user through the injected loader."""
-
-	if memory_loader is None:
-		return []
-
-	return list(memory_loader(user_id, limit))
-
-
 @dataclass(slots=True)
 class ChatUseCase:
 	"""Chat orchestration focused on relevant memory retrieval."""
 
-	memory_loader: MemoryLoader
+	memory_service: MemoryService
 	response_generator: ResponseGenerator = default_response_generator
 
 	def handle_chat(
@@ -70,7 +51,8 @@ class ChatUseCase:
 		memory_limit: int = 50,
 	) -> dict[str, Any]:
 		query_embedding = generate_embedding(message)
-		all_memories = get_recent_memories(user_id, limit=memory_limit, memory_loader=self.memory_loader)
+		self.memory_service.save_memory(user_id, message, query_embedding)
+		all_memories = self.memory_service.get_recent_memories(user_id, limit=memory_limit)
 		relevant_memories = get_relevant_memories(
 			query_embedding=query_embedding,
 			memories=all_memories,
