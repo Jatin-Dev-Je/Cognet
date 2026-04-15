@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable
 
-from app.core.inference.classifier import classify_memory, compute_importance
+from app.core.inference.classifier import assign_memory_level, classify_memory, compute_importance
 from app.utils.logger import logger
 
 
@@ -43,6 +43,7 @@ def _build_memory_record(
 	content: str,
 	embedding: Iterable[float],
 	session_id: str | None = None,
+	goal: str | None = None,
 ) -> MemoryRecord:
 	"""Build a memory record with classification and timestamps."""
 
@@ -51,10 +52,12 @@ def _build_memory_record(
 	return {
 		"user_id": user_id,
 		"session_id": session_id,
+		"goal": goal,
 		"content": content,
 		"embedding": list(embedding),
 		"type": memory_type,
 		"importance": compute_importance(memory_type),
+		"memory_level": assign_memory_level(memory_type),
 		"created_at": datetime.utcnow(),
 	}
 
@@ -64,6 +67,7 @@ def save_memory(
 	content: str,
 	embedding: Iterable[float],
 	session_id: str | None = None,
+	goal: str | None = None,
 ) -> MemoryRecord:
 	"""Save a memory into the shared in-memory store."""
 
@@ -77,7 +81,7 @@ def save_memory(
 			and (session_id is None or memory.get("session_id") == session_id)
 		)
 
-	memory = _build_memory_record(user_id, content, embedding, session_id=session_id)
+	memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 	_MEMORY_STORE.append(memory)
 	logger.info("Saving memory for user_id=%s", user_id)
 	return memory
@@ -107,6 +111,7 @@ class MemoryService:
 		content: str,
 		embedding: Iterable[float],
 		session_id: str | None = None,
+		goal: str | None = None,
 	) -> MemoryRecord:
 		"""Save a memory into the configured store."""
 
@@ -120,7 +125,7 @@ class MemoryService:
 				and (session_id is None or memory.get("session_id") == session_id)
 			)
 
-		memory = _build_memory_record(user_id, content, embedding, session_id=session_id)
+		memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 		self.storage.append(memory)
 		logger.info("Saving memory for user_id=%s", user_id)
 		return memory

@@ -46,3 +46,11 @@ def compute_importance(memory_type: str) -> float:
 	if memory_type == "task":
 		return 0.7
 	return 0.5
+
+
+def assign_memory_level(memory_type: str) -> str:
+	"""Assign long-term or short-term memory levels."""
+
+	if memory_type in {"project", "completed"}:
+		return "long"
+	return "short"
