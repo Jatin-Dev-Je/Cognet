@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable
 
+from app.core.events.event_bus import event_bus
 from app.core.inference.classifier import assign_memory_level, classify_memory, compute_importance
 from app.utils.logger import logger
 
@@ -83,6 +84,7 @@ def save_memory(
 
 	memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 	_MEMORY_STORE.append(memory)
+	event_bus.publish("memory_created", memory)
 	logger.info("Saving memory for user_id=%s", user_id)
 	return memory
 
@@ -127,6 +129,7 @@ class MemoryService:
 
 		memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 		self.storage.append(memory)
+		event_bus.publish("memory_created", memory)
 		logger.info("Saving memory for user_id=%s", user_id)
 		return memory
 
