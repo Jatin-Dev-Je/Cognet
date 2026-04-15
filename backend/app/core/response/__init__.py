@@ -1,0 +1,1 @@
+"""Response package for Cognet."""

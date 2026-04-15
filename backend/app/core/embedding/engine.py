@@ -20,6 +20,10 @@ from __future__ import annotations
 import hashlib
 import re
 from math import sqrt
+from typing import Iterable
+
+
+_EMBEDDING_CACHE: dict[tuple[str, int], list[float]] = {}
 
 
 def _tokenize(text: str) -> list[str]:
@@ -36,6 +40,10 @@ def _normalize(vector: list[float]) -> list[float]:
 def generate_embedding(text: str, dimensions: int = 64) -> list[float]:
 	"""Generate a deterministic embedding for a piece of text."""
 
+	cache_key = (text, dimensions)
+	if cache_key in _EMBEDDING_CACHE:
+		return list(_EMBEDDING_CACHE[cache_key])
+
 	vector = [0.0] * dimensions
 
 	for token in _tokenize(text):
@@ -43,4 +51,6 @@ def generate_embedding(text: str, dimensions: int = 64) -> list[float]:
 		index = int(digest, 16) % dimensions
 		vector[index] += 1.0
 
-	return _normalize(vector)
+	normalized = _normalize(vector)
+	_EMBEDDING_CACHE[cache_key] = list(normalized)
+	return normalized
