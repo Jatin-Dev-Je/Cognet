@@ -52,7 +52,9 @@ def compute_score(memory: MemoryDocument, similarity: float) -> float:
 		time_difference = abs((datetime.utcnow() - created_at).total_seconds())
 		recency = 1 / (1 + time_difference)
 
-	return 0.7 * similarity + 0.3 * recency
+	importance = float(memory.get("importance") or 0.5)
+
+	return 0.6 * similarity + 0.2 * recency + 0.2 * importance
 
 
 def _extract_embedding(memory: MemoryDocument) -> Sequence[float]:

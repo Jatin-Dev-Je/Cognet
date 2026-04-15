@@ -49,7 +49,19 @@ def build_context(memories: Sequence[MemoryDocument]) -> dict[str, Any]:
 	else:
 		context["suggestion"] = "Continue the current project with the next logical step."
 
+	context["project"] = context["project"] or _best_project(memories)
+
 	return context
+
+
+def _best_project(memories: Sequence[MemoryDocument]) -> str | None:
+	"""Pick the most relevant project-like memory if no explicit project was found."""
+
+	for memory in memories:
+		content = str(memory.get("content", "")).strip()
+		if content:
+			return content
+	return None
 
 
 def format_context(context: Mapping[str, Any]) -> str:
@@ -61,6 +73,8 @@ def format_context(context: Mapping[str, Any]) -> str:
 	completed = list(context.get("completed", []))
 	pending = list(context.get("tasks", []))
 	suggestion = context.get("suggestion")
+	completed = completed[:5]
+	pending = pending[:5]
 
 	if project:
 		formatted += f"Current Project:\n{project}\n\n"

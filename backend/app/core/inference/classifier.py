@@ -34,3 +34,15 @@ def classify_memory(text: str) -> str:
 		return "task"
 
 	return "general"
+
+
+def compute_importance(memory_type: str) -> float:
+	"""Assign an importance score to a memory type."""
+
+	if memory_type == "project":
+		return 0.9
+	if memory_type == "completed":
+		return 0.8
+	if memory_type == "task":
+		return 0.7
+	return 0.5

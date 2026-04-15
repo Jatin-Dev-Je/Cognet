@@ -15,13 +15,15 @@ Steps:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.core.context.builder import build_context, format_context
 from app.core.embedding.engine import generate_embedding
+from app.core.knowledge_graph.extractor import extract_entities
 from app.core.inference.reasoning import generate_insights
 from app.core.retrieval.semantic import get_relevant_memories
+from app.domain.graph.service import GraphService
 from app.domain.memory.service import MemoryService
 from app.infrastructure.ai.openai_service import generate_response
 
@@ -41,18 +43,22 @@ class ChatUseCase:
 	"""Chat orchestration focused on relevant memory retrieval."""
 
 	memory_service: MemoryService
+	graph_service: GraphService = field(default_factory=GraphService)
 	response_generator: ResponseGenerator = default_response_generator
 
 	def handle_chat(
 		self,
 		user_id: str,
 		message: str,
+		session_id: str | None = None,
 		top_k: int = 5,
 		memory_limit: int = 50,
 	) -> dict[str, Any]:
 		query_embedding = generate_embedding(message)
-		self.memory_service.save_memory(user_id, message, query_embedding)
-		all_memories = self.memory_service.get_recent_memories(user_id, limit=memory_limit)
+		memory = self.memory_service.save_memory(user_id, message, query_embedding, session_id=session_id)
+		graph_data = extract_entities(message)
+		graph_record = self.graph_service.store_graph(user_id, graph_data["entities"], graph_data["relations"])
+		all_memories = self.memory_service.get_recent_memories(user_id, limit=memory_limit, session_id=session_id)
 		relevant_memories = get_relevant_memories(
 			query_embedding=query_embedding,
 			memories=all_memories,
@@ -71,6 +77,9 @@ class ChatUseCase:
 		return {
 			"user_id": user_id,
 			"message": message,
+			"session_id": session_id,
+			"saved_memory": memory,
+			"graph": graph_record,
 			"context": structured_context,
 			"formatted_context": formatted_context,
 			"insights": insights,
