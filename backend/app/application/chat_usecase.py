@@ -20,9 +20,11 @@ from typing import Any, Callable
 
 from app.core.context.builder import build_context, format_context
 from app.core.embedding.engine import generate_embedding
+from app.core.inference.agent_runner import run_agents
 from app.core.knowledge_graph.extractor import extract_entities
 from app.core.inference.reasoning import generate_insights
 from app.core.retrieval.semantic import get_relevant_memories
+from app.domain.agent.service import AgentService
 from app.domain.graph.service import GraphService
 from app.domain.memory.service import MemoryService
 from app.infrastructure.ai.openai_service import generate_response
@@ -44,6 +46,7 @@ class ChatUseCase:
 
 	memory_service: MemoryService
 	graph_service: GraphService = field(default_factory=GraphService)
+	agent_service: AgentService = field(default_factory=AgentService)
 	response_generator: ResponseGenerator = default_response_generator
 
 	def handle_chat(
@@ -66,10 +69,14 @@ class ChatUseCase:
 		)
 		structured_context = build_context(relevant_memories)
 		insights = generate_insights(structured_context)
+		agent_outputs = run_agents(structured_context, self.agent_service.agents)
 		formatted_context = format_context(structured_context)
+		full_context = formatted_context
+		if agent_outputs:
+			full_context = f"{formatted_context}\n\nAgent Outputs:\n" + "\n".join(f"- {output}" for output in agent_outputs)
 		response = generate_response(
 			user_input=message,
-			context=formatted_context,
+			context=full_context,
 			insights=insights,
 			response_generator=self.response_generator,
 		)
@@ -82,6 +89,8 @@ class ChatUseCase:
 			"graph": graph_record,
 			"context": structured_context,
 			"formatted_context": formatted_context,
+			"agent_outputs": agent_outputs,
+			"full_context": full_context,
 			"insights": insights,
 			"relevant_memories": relevant_memories,
 			"response": response,
