@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.core.embedding.engine import generate_embedding
 from app.domain.memory.service import MemoryService
+from app.schemas.memory import MemoryCreateRequest
 
 
 router = APIRouter(tags=["memory"])
@@ -13,12 +14,14 @@ _memory_service = MemoryService()
 
 
 @router.post("/memory/add")
-def add_memory(payload: dict) -> dict:
+def add_memory(payload: MemoryCreateRequest) -> dict:
 	"""Add a memory through the developer API."""
 
-	user_id = payload.get("user_id", "developer")
-	content = payload.get("content", "")
-	session_id = payload.get("session_id")
-	goal = payload.get("goal")
-	memory = _memory_service.save_memory(user_id, content, generate_embedding(content), session_id=session_id, goal=goal)
+	memory = _memory_service.save_memory(
+		payload.user_id,
+		payload.content,
+		generate_embedding(payload.content),
+		session_id=payload.session_id,
+		goal=payload.goal,
+	)
 	return {"status": "saved", "memory": memory}

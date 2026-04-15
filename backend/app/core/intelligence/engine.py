@@ -18,6 +18,7 @@ from app.core.knowledge_graph.extractor import extract_entities
 from app.core.memory.summarizer import summarize_memories
 from app.core.retrieval.semantic import get_relevant_memories
 from app.core.response.formatter import format_response
+from app.config.settings import get_settings
 from app.domain.agent.service import AgentService
 from app.domain.goals.service import GoalService, extract_goal
 from app.domain.graph.service import GraphService
@@ -52,11 +53,14 @@ class IntelligenceEngine:
 		user_id: str,
 		message: str,
 		session_id: str | None = None,
-		top_k: int = 5,
-		memory_limit: int = 30,
+		top_k: int | None = None,
+		memory_limit: int | None = None,
 	) -> dict[str, Any]:
 		"""Run the full Cognet intelligence pipeline."""
 
+		settings = get_settings()
+		top_k = top_k or settings.retrieval_top_k
+		memory_limit = memory_limit or settings.max_context_memories
 		started_at = perf_counter()
 		logger.info("User: %s", message)
 

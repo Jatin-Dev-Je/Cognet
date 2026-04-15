@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Callable
 
+from app.utils.logger import logger
+
 
 EventHandler = Callable[[Any], None]
 
@@ -28,7 +30,10 @@ class EventBus:
         """Publish an event to all registered handlers."""
 
         for handler in self.listeners.get(event, []):
-            handler(data)
+            try:
+                handler(data)
+            except Exception as exc:
+                logger.error("Event handler failed for %s: %s", event, exc)
 
 
 event_bus = EventBus()

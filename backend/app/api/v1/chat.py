@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.application.chat_usecase import ChatUseCase
+from app.schemas.chat import ChatRequest
 from app.domain.memory.service import MemoryService
 
 
@@ -13,11 +14,11 @@ _chat_usecase = ChatUseCase(memory_service=MemoryService())
 
 
 @router.post("/chat")
-def chat(payload: dict) -> dict:
+def chat(payload: ChatRequest) -> dict:
 	"""Process a chat message through Cognet."""
 
 	return _chat_usecase.handle_chat(
-		user_id=payload.get("user_id", "developer"),
-		message=payload.get("message", ""),
-		session_id=payload.get("session_id"),
+		user_id=payload.user_id,
+		message=payload.message,
+		session_id=payload.session_id,
 	)

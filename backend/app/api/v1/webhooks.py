@@ -16,7 +16,7 @@ def webhook(data: dict) -> dict:
     """Receive external data and publish it into Cognet."""
 
     event_bus.publish("webhook_received", data)
-    user_id = data.get("user_id", "webhook")
-    content = data.get("content") or str(data)
+    user_id = str(data.get("user_id", "webhook"))
+    content = str(data.get("content") or data.get("message") or data)
     memory = _memory_service.save_memory(user_id, content, generate_embedding(content))
     return {"status": "received", "memory": memory}
