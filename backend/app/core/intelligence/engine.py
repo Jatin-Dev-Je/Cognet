@@ -12,12 +12,16 @@ from time import perf_counter
 from typing import Any, Callable
 
 from app.core.context.builder import build_context, format_context
+from app.core.context.final_formatter import format_final
 from app.core.context.formatter import format_temporal_context
 from app.core.context.temporal_builder import group_by_time
 from app.core.embedding.engine import generate_embedding
 from app.core.ai.prompt import PROMPT_VERSION
 from app.core.config.flags import FEATURES
 from app.core.inference.agent_runner import run_agents
+from app.core.inference.decision import decide_action
+from app.core.inference.fusion import fuse_context
+from app.core.inference.intent import detect_intent
 from app.core.inference.reasoning import generate_insights
 from app.core.inference.next_step import suggest_next
 from app.core.knowledge_graph.extractor import extract_entities
@@ -30,7 +34,7 @@ from app.domain.goals.service import GoalService, extract_goal
 from app.domain.graph.service import GraphService
 from app.domain.memory.service import MemoryService
 from app.domain.session.service import SessionService
-from app.infrastructure.ai.openai_service import generate_response
+from app.infrastructure.ai.openai_service import build_temporal_prompt
 from app.utils.logger import logger
 
 
@@ -113,7 +117,10 @@ class IntelligenceEngine:
 			)
 			structured_context = build_context(relevant_memories)
 			insights = generate_insights(structured_context)
+			intent = detect_intent(message)
 			temporal_context = group_by_time(relevant_memories)
+			fused = fuse_context(intent, temporal_context, structured_context)
+			decision = decide_action(fused)
 			next_step = suggest_next(structured_context)
 			agent_outputs = run_agents(structured_context, self.agent_service.agents) if FEATURES.get("agents", True) else []
 			formatted_context = format_context(structured_context)
@@ -126,13 +133,14 @@ class IntelligenceEngine:
 				full_context = f"{full_context}\n\nAgent Outputs:\n" + "\n".join(f"- {output}" for output in agent_outputs)
 
 			logger.info("Context length: %s", len(full_context))
-			response_text = generate_response(
+			final_output = format_final(fused, decision)
+			response_text = final_output
+			prompt_preview = build_temporal_prompt(
 				user_input=message,
 				context=full_context,
 				insights=insights,
-				response_generator=self.response_generator,
 				temporal_context=temporal_context_text,
-				next_step=next_step,
+				next_step=decision,
 			)
 			primary_insight = insights[0] if insights else response_text
 			response_time_ms = int((perf_counter() - started_at) * 1000)
@@ -148,11 +156,16 @@ class IntelligenceEngine:
 				"graph": graph_record,
 				"long_term_summary": long_term_summary,
 				"context": structured_context,
+				"intent": intent,
+				"fused": fused,
+				"decision": decision,
 				"formatted_context": formatted_context,
 				"agent_outputs": agent_outputs,
 				"full_context": full_context,
 				"temporal_context": temporal_context_text,
 				"next_step": next_step,
+				"final_output": final_output,
+				"prompt_preview": prompt_preview,
 				"insights": insights,
 				"relevant_memories": relevant_memories,
 				"response": format_response(
