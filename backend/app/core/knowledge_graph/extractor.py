@@ -32,7 +32,7 @@ def extract_entities(text: str) -> dict[str, list[tuple[str, str, str]] | list[s
 			entities.append(token)
 
 	if entities:
-		target = entities[0]
+		target = next((entity for entity in entities if entity != "I"), entities[0])
 		relations.append(("user", "working_on", target))
 
 	return {"entities": entities, "relations": relations}

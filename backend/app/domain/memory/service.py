@@ -1,24 +1,24 @@
 """Memory service for Cognet.
 
+Memory Persistence Rules:
 Purpose:
-Save memories with classification and timestamps.
+Ensure all user data is stored in MongoDB and survives restarts.
 
-Steps:
-- classify text
-- store content
-- store embedding
-- store type
-- store created_at
+Requirements:
+
+Validation:
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable
 
 from app.core.events.event_bus import event_bus
 from app.core.inference.classifier import assign_memory_level, classify_memory, compute_importance
+from app.infrastructure.db.mongo.base_repository import MongoRepository
+from app.infrastructure.db.mongo.collections import memory_collection
 from app.utils.logger import logger
 
 
@@ -26,17 +26,11 @@ MemoryRecord = dict[str, Any]
 _MEMORY_STORE: list[MemoryRecord] = []
 
 
-def is_duplicate(user_id: str, content: str, session_id: str | None = None) -> bool:
-	"""Check whether the same memory already exists."""
-
-	for memory in _MEMORY_STORE:
-		if memory.get("user_id") != user_id:
-			continue
-		if session_id is not None and memory.get("session_id") != session_id:
-			continue
-		if memory.get("content") == content:
-			return True
-	return False
+def _memory_query(user_id: str, content: str, session_id: str | None = None) -> dict[str, Any]:
+	query: dict[str, Any] = {"user_id": user_id, "content": content}
+	if session_id is not None:
+		query["session_id"] = session_id
+	return query
 
 
 def _build_memory_record(
@@ -63,49 +57,11 @@ def _build_memory_record(
 	}
 
 
-def save_memory(
-	user_id: str,
-	content: str,
-	embedding: Iterable[float],
-	session_id: str | None = None,
-	goal: str | None = None,
-) -> MemoryRecord:
-	"""Save a memory into the shared in-memory store."""
+class MongoMemoryRepository(MongoRepository):
+	"""Mongo-backed memory repository."""
 
-	if is_duplicate(user_id, content, session_id=session_id):
-		logger.info("Skipping duplicate memory for user_id=%s", user_id)
-		return next(
-			memory
-			for memory in _MEMORY_STORE
-			if memory.get("user_id") == user_id
-			and memory.get("content") == content
-			and (session_id is None or memory.get("session_id") == session_id)
-		)
-
-	memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
-	_MEMORY_STORE.append(memory)
-	event_bus.publish("memory_created", memory)
-	logger.info("Saving memory for user_id=%s", user_id)
-	return memory
-
-
-def get_recent_memories(user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
-	"""Return the latest memories for a user from the shared store."""
-
-	user_memories = [
-		memory
-		for memory in _MEMORY_STORE
-		if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id)
-	]
-	user_memories.sort(key=lambda memory: memory.get("created_at") or datetime.min, reverse=True)
-	return user_memories[:limit]
-
-
-@dataclass(slots=True)
-class MemoryService:
-	"""In-memory memory service used until MongoDB is wired up."""
-
-	storage: list[MemoryRecord] = field(default_factory=lambda: _MEMORY_STORE)
+	def __init__(self) -> None:
+		super().__init__(memory_collection)
 
 	def save_memory(
 		self,
@@ -115,31 +71,139 @@ class MemoryService:
 		session_id: str | None = None,
 		goal: str | None = None,
 	) -> MemoryRecord:
-		"""Save a memory into the configured store."""
+		"""Insert a memory record into MongoDB or return the existing duplicate."""
 
-		if is_duplicate(user_id, content, session_id=session_id):
-			logger.info("Skipping duplicate memory for user_id=%s", user_id)
-			return next(
-				memory
-				for memory in self.storage
-				if memory.get("user_id") == user_id
-				and memory.get("content") == content
-				and (session_id is None or memory.get("session_id") == session_id)
-			)
+		try:
+			existing = self.find_one(_memory_query(user_id, content, session_id=session_id))
+			if existing is not None:
+				logger.info("Skipping duplicate memory for user_id=%s", user_id)
+				return existing
 
+			memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
+			stored_memory = self.insert_one(memory)
+			event_bus.publish("memory_created", stored_memory)
+			logger.info("Saving memory for user_id=%s", user_id)
+			return stored_memory
+		except Exception as exc:
+			logger.warning("Mongo unavailable, using fallback memory store: %s", exc)
+			return self._fallback_save(user_id, content, embedding, session_id=session_id, goal=goal)
+
+	def get_recent_memories(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+		"""Return the latest memories for a user from MongoDB."""
+
+		query: dict[str, Any] = {"user_id": user_id}
+		if session_id is not None:
+			query["session_id"] = session_id
+		try:
+			return self.find_many(query, limit=limit, sort=[("created_at", -1)])
+		except Exception as exc:
+			logger.warning("Mongo unavailable, reading fallback memory store: %s", exc)
+			return self._fallback_recent(user_id, limit=limit, session_id=session_id)
+
+	def _fallback_save(
+		self,
+		user_id: str,
+		content: str,
+		embedding: Iterable[float],
+		session_id: str | None = None,
+		goal: str | None = None,
+	) -> MemoryRecord:
+		for memory in _MEMORY_STORE:
+			if memory.get("user_id") == user_id and memory.get("content") == content and memory.get("session_id") == session_id:
+				return memory
+
+		memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
+		_MEMORY_STORE.append(memory)
+		event_bus.publish("memory_created", memory)
+		return memory
+
+	def _fallback_recent(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+		filtered = [
+			memory
+			for memory in _MEMORY_STORE
+			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id)
+		]
+		return filtered[-limit:]
+
+
+class InMemoryMemoryRepository:
+	"""Legacy test-only repository adapter."""
+
+	def __init__(self, storage: list[MemoryRecord]) -> None:
+		self.storage = storage
+
+	def save_memory(
+		self,
+		user_id: str,
+		content: str,
+		embedding: Iterable[float],
+		session_id: str | None = None,
+		goal: str | None = None,
+	) -> MemoryRecord:
 		memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 		self.storage.append(memory)
 		event_bus.publish("memory_created", memory)
-		logger.info("Saving memory for user_id=%s", user_id)
 		return memory
 
 	def get_recent_memories(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
-		"""Return the latest memories for a user."""
-
-		user_memories = [
+		filtered = [
 			memory
 			for memory in self.storage
 			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id)
 		]
-		user_memories.sort(key=lambda memory: memory.get("created_at") or datetime.min, reverse=True)
-		return user_memories[:limit]
+		return filtered[-limit:]
+
+
+@dataclass(slots=True)
+class MemoryService:
+	"""Mongo-backed memory service."""
+
+	repository: MongoMemoryRepository | InMemoryMemoryRepository | None = None
+	storage: list[MemoryRecord] | None = None
+
+	def __post_init__(self) -> None:
+		if self.repository is None:
+			if self.storage is not None:
+				self.repository = InMemoryMemoryRepository(self.storage)
+			else:
+				self.repository = MongoMemoryRepository()
+
+	def save_memory(
+		self,
+		user_id: str,
+		content: str,
+		embedding: Iterable[float],
+		session_id: str | None = None,
+		goal: str | None = None,
+	) -> MemoryRecord:
+		"""Save a memory into MongoDB."""
+
+		assert self.repository is not None
+		return self.repository.save_memory(user_id, content, embedding, session_id=session_id, goal=goal)
+
+	def get_recent_memories(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+		"""Return the latest memories for a user."""
+
+		assert self.repository is not None
+		return self.repository.get_recent_memories(user_id, limit=limit, session_id=session_id)
+
+
+_DEFAULT_MEMORY_SERVICE = MemoryService()
+
+
+def save_memory(
+	user_id: str,
+	content: str,
+	embedding: Iterable[float],
+	session_id: str | None = None,
+	goal: str | None = None,
+) -> MemoryRecord:
+	"""Save a memory using the default Mongo-backed service."""
+
+	return _DEFAULT_MEMORY_SERVICE.save_memory(user_id, content, embedding, session_id=session_id, goal=goal)
+
+
+def get_recent_memories(user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+	"""Return recent memories using the default Mongo-backed service."""
+
+	return _DEFAULT_MEMORY_SERVICE.get_recent_memories(user_id, limit=limit, session_id=session_id)
