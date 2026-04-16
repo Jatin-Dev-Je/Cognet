@@ -15,6 +15,7 @@ from app.core.context.builder import build_context, format_context
 from app.core.context.final_formatter import format_final
 from app.core.context.formatter import format_temporal_context
 from app.core.context.temporal_builder import group_by_time
+from app.core.autonomous.runner import run_autonomous
 from app.core.embedding.engine import generate_embedding
 from app.core.ai.prompt import PROMPT_VERSION
 from app.core.config.flags import FEATURES
@@ -125,6 +126,7 @@ class IntelligenceEngine:
 			next_step = suggest_next(structured_context)
 			prediction = run_prediction(relevant_memories)
 			agent_outputs = run_agents(structured_context, self.agent_service.agents, memories=relevant_memories) if FEATURES.get("agents", True) else []
+			autonomous_output = run_autonomous(user_id, memory, structured_context, prediction)
 			formatted_context = format_context(structured_context)
 			temporal_context_text = format_temporal_context(temporal_context)
 			session_context = f"Session:\nactive_project: {session.get('active_project')}\nrecent_actions: {session.get('recent_actions', [])}"
@@ -133,12 +135,16 @@ class IntelligenceEngine:
 				full_context = f"{full_context}\n\nLong-Term Memory Summary:\n{long_term_summary}"
 			if agent_outputs:
 				full_context = f"{full_context}\n\nAgent Outputs:\n" + "\n".join(f"- {output}" for output in agent_outputs)
+			if autonomous_output:
+				full_context = f"{full_context}\n\nAutonomous Output:\n- {autonomous_output}"
 
 			logger.info("Context length: %s", len(full_context))
 			prediction_text = None
 			if prediction.get("prediction") and prediction.get("confidence", 0) > 0.7:
 				prediction_text = f"You will likely {prediction['prediction']} next"
 			final_output = format_final(fused, decision, prediction=prediction_text)
+			if autonomous_output:
+				final_output = f"{final_output}\n\n{autonomous_output}"
 			response_text = final_output
 			prompt_preview = build_temporal_prompt(
 				user_input=message,
@@ -166,6 +172,7 @@ class IntelligenceEngine:
 				"decision": decision,
 				"formatted_context": formatted_context,
 				"agent_outputs": agent_outputs,
+				"autonomous_output": autonomous_output,
 				"full_context": full_context,
 				"temporal_context": temporal_context_text,
 				"next_step": next_step,
@@ -194,6 +201,7 @@ class IntelligenceEngine:
 				"trace": {
 					"memories_used": len(relevant_memories),
 					"agents_triggered": len(agent_outputs),
+					"autonomous_triggered": bool(autonomous_output),
 					"prediction_confidence": prediction.get("confidence", 0),
 					"latency_ms": response_time_ms,
 				},
@@ -206,5 +214,5 @@ class IntelligenceEngine:
 				"response": "System temporarily unavailable.",
 				"error": str(exc),
 				"prompt_version": PROMPT_VERSION,
-				"trace": {"memories_used": 0, "agents_triggered": 0, "prediction_confidence": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
+				"trace": {"memories_used": 0, "agents_triggered": 0, "autonomous_triggered": False, "prediction_confidence": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
 			}
