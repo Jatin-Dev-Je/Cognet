@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 
-def format_final(fused: Mapping[str, Any], decision: str) -> str:
+def format_final(fused: Mapping[str, Any], decision: str, prediction: str | None = None) -> str:
 	text = ""
 	temporal = dict(fused.get("temporal", {}))
 
@@ -29,4 +29,7 @@ def format_final(fused: Mapping[str, Any], decision: str) -> str:
 			text += f"- {item}\n"
 
 	text += f"\nNext Step:\n{decision}\n"
+
+	if prediction:
+		text += f"\nPrediction:\n{prediction}\n"
 	return text.strip()

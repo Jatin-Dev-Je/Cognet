@@ -24,6 +24,7 @@ from app.core.inference.fusion import fuse_context
 from app.core.inference.intent import detect_intent
 from app.core.inference.reasoning import generate_insights
 from app.core.inference.next_step import suggest_next
+from app.core.prediction.proactive import run_prediction
 from app.core.knowledge_graph.extractor import extract_entities
 from app.core.memory.summarizer import summarize_memories
 from app.core.retrieval.semantic import get_relevant_memories
@@ -122,7 +123,8 @@ class IntelligenceEngine:
 			fused = fuse_context(intent, temporal_context, structured_context)
 			decision = decide_action(fused)
 			next_step = suggest_next(structured_context)
-			agent_outputs = run_agents(structured_context, self.agent_service.agents) if FEATURES.get("agents", True) else []
+			prediction = run_prediction(relevant_memories)
+			agent_outputs = run_agents(structured_context, self.agent_service.agents, memories=relevant_memories) if FEATURES.get("agents", True) else []
 			formatted_context = format_context(structured_context)
 			temporal_context_text = format_temporal_context(temporal_context)
 			session_context = f"Session:\nactive_project: {session.get('active_project')}\nrecent_actions: {session.get('recent_actions', [])}"
@@ -133,7 +135,10 @@ class IntelligenceEngine:
 				full_context = f"{full_context}\n\nAgent Outputs:\n" + "\n".join(f"- {output}" for output in agent_outputs)
 
 			logger.info("Context length: %s", len(full_context))
-			final_output = format_final(fused, decision)
+			prediction_text = None
+			if prediction.get("prediction") and prediction.get("confidence", 0) > 0.7:
+				prediction_text = f"You will likely {prediction['prediction']} next"
+			final_output = format_final(fused, decision, prediction=prediction_text)
 			response_text = final_output
 			prompt_preview = build_temporal_prompt(
 				user_input=message,
@@ -164,6 +169,7 @@ class IntelligenceEngine:
 				"full_context": full_context,
 				"temporal_context": temporal_context_text,
 				"next_step": next_step,
+				"prediction": prediction,
 				"final_output": final_output,
 				"prompt_preview": prompt_preview,
 				"insights": insights,
@@ -178,6 +184,7 @@ class IntelligenceEngine:
 						"raw_response": response_text,
 						"temporal_context": temporal_context_text,
 						"next_step": next_step,
+						"prediction": prediction_text,
 						"prompt_version": PROMPT_VERSION,
 					},
 				),
@@ -187,6 +194,7 @@ class IntelligenceEngine:
 				"trace": {
 					"memories_used": len(relevant_memories),
 					"agents_triggered": len(agent_outputs),
+					"prediction_confidence": prediction.get("confidence", 0),
 					"latency_ms": response_time_ms,
 				},
 			}
@@ -198,5 +206,5 @@ class IntelligenceEngine:
 				"response": "System temporarily unavailable.",
 				"error": str(exc),
 				"prompt_version": PROMPT_VERSION,
-				"trace": {"memories_used": 0, "agents_triggered": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
+				"trace": {"memories_used": 0, "agents_triggered": 0, "prediction_confidence": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
 			}

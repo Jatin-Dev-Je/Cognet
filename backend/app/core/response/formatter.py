@@ -26,18 +26,21 @@ def format_response(data: Mapping[str, Any]) -> str:
 	insight = data.get("insight") or (insights[0] if insights else raw_response)
 	temporal_context = str(data.get("temporal_context") or "").strip()
 	next_step = data.get("next_step") or data.get("suggestion") or "Define your next goal"
+	prediction = str(data.get("prediction") or "").strip()
 
 	if temporal_context:
+		prediction_block = f"\nPrediction:\n{prediction}\n" if prediction else ""
 		return f"""
 {temporal_context}
 
 Next Step:
 {next_step}
 
-Insight:
+{prediction_block}Insight:
 {insight}
 """.strip()
 
+	prediction_block = f"\nPrediction:\n{prediction}\n" if prediction else ""
 	return f"""
 Current Focus:
 {project}
@@ -48,6 +51,6 @@ Completed:
 Next Steps:
 {tasks}
 
-Insight:
+{prediction_block}Insight:
 {insight}
 """.strip()
