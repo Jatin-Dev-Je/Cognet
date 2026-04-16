@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.identity import generate_id
+
 
 SessionRecord = dict[str, Any]
 
@@ -26,10 +28,13 @@ class SessionService:
 		session = self.storage.get(key)
 		if session is None:
 			session = {
+				"id": generate_id(),
 				"session_id": key,
 				"user_id": user_id,
 				"active_project": None,
 				"recent_actions": [],
+				"version": 1,
+				"is_deleted": False,
 			}
 			self.storage[key] = session
 		return session
@@ -43,4 +48,13 @@ class SessionService:
 		if recent_action:
 			session["recent_actions"].append(recent_action)
 			session["recent_actions"] = session["recent_actions"][-5:]
+		session["version"] = int(session.get("version", 1)) + 1
+		return session
+
+	def soft_delete_session(self, session_id: str) -> SessionRecord | None:
+		session = self.storage.get(session_id)
+		if session is None:
+			return None
+		session["is_deleted"] = True
+		session["version"] = int(session.get("version", 1)) + 1
 		return session

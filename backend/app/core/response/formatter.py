@@ -24,6 +24,19 @@ def format_response(data: Mapping[str, Any]) -> str:
 	insights = list(data.get("insights", []))
 	raw_response = data.get("raw_response") or "N/A"
 	insight = data.get("insight") or (insights[0] if insights else raw_response)
+	temporal_context = str(data.get("temporal_context") or "").strip()
+	next_step = data.get("next_step") or data.get("suggestion") or "Define your next goal"
+
+	if temporal_context:
+		return f"""
+{temporal_context}
+
+Next Step:
+{next_step}
+
+Insight:
+{insight}
+""".strip()
 
 	return f"""
 Current Focus:

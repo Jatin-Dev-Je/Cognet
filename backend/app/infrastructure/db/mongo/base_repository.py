@@ -9,6 +9,7 @@ from __future__ import annotations
 from abc import ABC
 from typing import Any, Mapping
 
+from pymongo import ReturnDocument
 from pymongo.collection import Collection
 
 from app.infrastructure.db.mongo.client import get_collection
@@ -48,6 +49,17 @@ class MongoRepository(ABC):
 		result = self.collection.insert_one(payload)
 		payload["id"] = str(result.inserted_id)
 		return payload
+
+	def update_one(self, query: Mapping[str, Any], update: Mapping[str, Any]) -> dict[str, Any] | None:
+		result = self.collection.find_one_and_update(dict(query), {"$set": dict(update)}, return_document=ReturnDocument.AFTER)
+		return self._sanitize(result)
+
+	def update_many(self, query: Mapping[str, Any], update: Mapping[str, Any]) -> int:
+		result = self.collection.update_many(dict(query), {"$set": dict(update)})
+		return int(result.modified_count)
+
+	def soft_delete_many(self, query: Mapping[str, Any]) -> int:
+		return self.update_many(query, {"is_deleted": True})
 
 	def ensure_indexes(self, index_fields: list[str]) -> None:
 		"""Create single-field indexes for the supplied fields."""

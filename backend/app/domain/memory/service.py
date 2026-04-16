@@ -17,11 +17,16 @@ import asyncio
 from typing import Any, Iterable
 
 from app.core.cache import cache_get, cache_invalidate_prefix, cache_key, cache_set
+from app.core.config.flags import FEATURES
 from app.core.events.event_bus import event_bus
+from app.core.identity import generate_id
 from app.core.inference.classifier import assign_memory_level, classify_memory, compute_importance
+from app.core.memory.summarizer import summarize_memories
+from app.core.utils.sanitize import clean_input
 from app.infrastructure.db.mongo.base_repository import MongoRepository
 from app.infrastructure.db.mongo.collections import memory_collection
 from app.utils.logger import logger
+from app.domain.memory.entity import enrich_temporal_memory, soft_delete_memory
 
 
 MemoryRecord = dict[str, Any]
@@ -46,8 +51,8 @@ def _build_memory_record(
 	"""Build a memory record with classification and timestamps."""
 
 	memory_type = classify_memory(content)
-
-	return {
+	memory: MemoryRecord = {
+		"id": generate_id(),
 		"user_id": user_id,
 		"session_id": session_id,
 		"goal": goal,
@@ -56,8 +61,10 @@ def _build_memory_record(
 		"type": memory_type,
 		"importance": compute_importance(memory_type),
 		"memory_level": assign_memory_level(memory_type),
-		"created_at": datetime.utcnow(),
+		"version": 1,
+		"is_deleted": False,
 	}
+	return enrich_temporal_memory(memory)
 
 
 class MongoMemoryRepository(MongoRepository):
@@ -77,6 +84,7 @@ class MongoMemoryRepository(MongoRepository):
 		"""Insert a memory record into MongoDB or return the existing duplicate."""
 
 		try:
+			content = clean_input(content)
 			existing = self.find_one(_memory_query(user_id, content, session_id=session_id))
 			if existing is not None:
 				logger.info("Skipping duplicate memory for user_id=%s", user_id)
@@ -87,6 +95,7 @@ class MongoMemoryRepository(MongoRepository):
 			event_bus.publish("memory_created", stored_memory)
 			cache_invalidate_prefix(_CACHE_PREFIX)
 			logger.info("Saving memory for user_id=%s", user_id)
+			self._enforce_memory_limit(user_id)
 			return stored_memory
 		except Exception as exc:
 			logger.warning("Mongo unavailable, using fallback memory store: %s", exc)
@@ -102,8 +111,8 @@ class MongoMemoryRepository(MongoRepository):
 			cache_id = cache_key(_CACHE_PREFIX, user_id, limit, session_id)
 			cached = cache_get(cache_id)
 			if cached is not None:
-				return list(cached)
-			memories = self.find_many(query, limit=limit, sort=[("created_at", -1)])
+				return [memory for memory in list(cached) if not memory.get("is_deleted")]
+			memories = [memory for memory in self.find_many(query, limit=limit, sort=[("created_at", -1)]) if not memory.get("is_deleted")]
 			cache_set(cache_id, list(memories))
 			return memories
 		except Exception as exc:
@@ -138,15 +147,40 @@ class MongoMemoryRepository(MongoRepository):
 		memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 		_MEMORY_STORE.append(memory)
 		event_bus.publish("memory_created", memory)
+		self._enforce_memory_limit(user_id)
 		return memory
 
 	def _fallback_recent(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
 		filtered = [
 			memory
 			for memory in _MEMORY_STORE
-			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id)
+			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id) and not memory.get("is_deleted")
 		]
 		return filtered[-limit:]
+
+	def _enforce_memory_limit(self, user_id: str) -> None:
+		active_memories = [memory for memory in self.get_recent_memories(user_id, limit=2000) if not memory.get("is_deleted")]
+		if len(active_memories) <= 1000:
+			return
+
+		overflow = active_memories[:-1000]
+		if not overflow:
+			return
+
+		if FEATURES.get("summarization", True):
+			summary_text = summarize_memories(overflow[:20])
+			archive = _build_memory_record(
+				user_id,
+				f"Archived memory summary: {summary_text}",
+				[0.0] * len(overflow[0].get("embedding", [0.0])),
+				goal="memory_archive",
+			)
+			archive["memory_level"] = "long"
+			_MEMORY_STORE.append(archive)
+
+		for memory in overflow:
+			soft_delete_memory(memory)
+		cache_invalidate_prefix(_CACHE_PREFIX)
 
 
 class InMemoryMemoryRepository:
@@ -173,7 +207,7 @@ class InMemoryMemoryRepository:
 		filtered = [
 			memory
 			for memory in self.storage
-			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id)
+			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id) and not memory.get("is_deleted")
 		]
 		return filtered[-limit:]
 

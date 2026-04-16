@@ -45,6 +45,7 @@ def _load_env_file() -> None:
 class Settings:
 	"""Runtime settings loaded from environment variables."""
 
+	api_version: str = field(default_factory=lambda: os.getenv("COGNET_API_VERSION", "v1"))
 	environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", os.getenv("COGNET_ENV", "development")))
 	app_name: str = field(default_factory=lambda: os.getenv("APP_NAME", os.getenv("COGNET_APP_NAME", "Cognet")))
 	api_prefix: str = field(default_factory=lambda: os.getenv("API_V1_PREFIX", os.getenv("COGNET_API_PREFIX", "/api/v1")))

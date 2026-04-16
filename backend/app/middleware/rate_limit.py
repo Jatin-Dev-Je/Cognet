@@ -31,7 +31,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 		if request.url.path in {"/", "/healthz", "/readyz"} or request.url.path.startswith("/api/v1/health"):
 			return await call_next(request)
 
-		user_id = getattr(request.state, "user_id", None) or request.client.host if request.client else "anonymous"
+		request_context = getattr(request.state, "request_context", None)
+		user_id = getattr(request_context, "user_id", None) or getattr(request.state, "user_id", None) or (request.client.host if request.client else "anonymous")
 		if not is_allowed(str(user_id)):
 			return JSONResponse(
 				status_code=status.HTTP_429_TOO_MANY_REQUESTS,

@@ -54,7 +54,19 @@ if not logger.handlers:
 	logger.addHandler(handler)
 
 
-def log_event(event: str, data: dict[str, Any] | None = None, *, user_id: str | None = None, level: int = logging.INFO) -> None:
+def log_event(
+	event: str,
+	data: dict[str, Any] | None = None,
+	*,
+	user_id: str | None = None,
+	request_id: str | None = None,
+	level: int = logging.INFO,
+) -> None:
 	"""Log a structured event."""
 
-	logger.log(level, event, extra={"event": event, "data": data or {}, "user_id": user_id})
+	extra: dict[str, Any] = {"event": event, "data": data or {}}
+	if user_id is not None:
+		extra["user_id"] = user_id
+	if request_id is not None:
+		extra["request_id"] = request_id
+	logger.log(level, event, extra=extra)

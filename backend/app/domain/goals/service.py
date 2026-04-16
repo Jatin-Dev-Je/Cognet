@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.identity import generate_id
+
 
 GoalRecord = dict[str, Any]
 
@@ -36,10 +38,19 @@ class GoalService:
 
 		record = next((item for item in self.storage if item.get("user_id") == user_id and item.get("goal") == goal), None)
 		if record is None:
-			record = {"user_id": user_id, "goal": goal, "progress": []}
+			record = {"id": generate_id(), "user_id": user_id, "goal": goal, "progress": [], "version": 1, "is_deleted": False}
 			self.storage.append(record)
 		if progress_item and progress_item not in record["progress"]:
 			record["progress"].append(progress_item)
+		record["version"] = int(record.get("version", 1)) + 1
+		return record
+
+	def soft_delete_goal(self, user_id: str, goal: str) -> GoalRecord | None:
+		record = next((item for item in self.storage if item.get("user_id") == user_id and item.get("goal") == goal), None)
+		if record is None:
+			return None
+		record["is_deleted"] = True
+		record["version"] = int(record.get("version", 1)) + 1
 		return record
 
 	def get_goal(self, user_id: str) -> GoalRecord | None:
