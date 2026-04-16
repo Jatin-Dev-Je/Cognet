@@ -11,8 +11,10 @@ Requirements:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+import httpx
 import requests
 
 from app.domain.connectors.base_connector import BaseConnector
@@ -29,6 +31,24 @@ class GitHubConnector(BaseConnector):
         response = requests.get(url, timeout=15)
         response.raise_for_status()
         payload = response.json()
+
+        messages: list[str] = []
+        for item in payload[:5]:
+            message = item.get("commit", {}).get("message", "")
+            if message:
+                messages.append(str(message).splitlines()[0])
+
+        logger.info("Fetched %s commits from %s", len(messages), repo)
+        return messages
+
+    async def fetch_commits_async(self, repo: str) -> list[str]:
+        """Fetch commit messages using an async HTTP client."""
+
+        url = f"https://api.github.com/repos/{repo}/commits"
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = response.json()
 
         messages: list[str] = []
         for item in payload[:5]:

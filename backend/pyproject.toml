@@ -9,6 +9,9 @@ description = "Cognet backend service"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi",
+  "httpx",
+  "motor",
+  "PyJWT",
   "pymongo",
   "requests",
   "uvicorn[standard]",

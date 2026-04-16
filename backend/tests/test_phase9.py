@@ -43,3 +43,20 @@ def test_chat_use_case_emits_session_and_goal() -> None:
 
 	assert result["session"]["active_project"] is not None
 	assert result["saved_memory"]["memory_level"] in {"short", "long"}
+
+
+def test_chat_use_case_async_wrapper_returns_result() -> None:
+	memory_service = MemoryService(storage=[])
+	chat = ChatUseCase(
+		memory_service=memory_service,
+		graph_service=GraphService(),
+		agent_service=AgentService(),
+		session_service=SessionService(),
+		goal_service=GoalService(),
+	)
+
+	import asyncio
+
+	result = asyncio.run(chat.handle_chat_async("user-1", "I am building Cognet backend", session_id="session-1"))
+
+	assert result["session"]["active_project"] is not None

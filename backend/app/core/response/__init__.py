@@ -1,1 +1,1 @@
-"""Response package for Cognet."""
+"""Response contract package."""

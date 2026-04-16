@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import asyncio
 from typing import Any, Iterable
 
+from app.core.cache import cache_get, cache_invalidate_prefix, cache_key, cache_set
 from app.core.events.event_bus import event_bus
 from app.core.inference.classifier import assign_memory_level, classify_memory, compute_importance
 from app.infrastructure.db.mongo.base_repository import MongoRepository
@@ -24,6 +26,7 @@ from app.utils.logger import logger
 
 MemoryRecord = dict[str, Any]
 _MEMORY_STORE: list[MemoryRecord] = []
+_CACHE_PREFIX = "recent_memories"
 
 
 def _memory_query(user_id: str, content: str, session_id: str | None = None) -> dict[str, Any]:
@@ -82,6 +85,7 @@ class MongoMemoryRepository(MongoRepository):
 			memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 			stored_memory = self.insert_one(memory)
 			event_bus.publish("memory_created", stored_memory)
+			cache_invalidate_prefix(_CACHE_PREFIX)
 			logger.info("Saving memory for user_id=%s", user_id)
 			return stored_memory
 		except Exception as exc:
@@ -95,10 +99,29 @@ class MongoMemoryRepository(MongoRepository):
 		if session_id is not None:
 			query["session_id"] = session_id
 		try:
-			return self.find_many(query, limit=limit, sort=[("created_at", -1)])
+			cache_id = cache_key(_CACHE_PREFIX, user_id, limit, session_id)
+			cached = cache_get(cache_id)
+			if cached is not None:
+				return list(cached)
+			memories = self.find_many(query, limit=limit, sort=[("created_at", -1)])
+			cache_set(cache_id, list(memories))
+			return memories
 		except Exception as exc:
 			logger.warning("Mongo unavailable, reading fallback memory store: %s", exc)
 			return self._fallback_recent(user_id, limit=limit, session_id=session_id)
+
+	async def save_memory_async(
+		self,
+		user_id: str,
+		content: str,
+		embedding: Iterable[float],
+		session_id: str | None = None,
+		goal: str | None = None,
+	) -> MemoryRecord:
+		return await asyncio.to_thread(self.save_memory, user_id, content, embedding, session_id, goal)
+
+	async def get_recent_memories_async(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+		return await asyncio.to_thread(self.get_recent_memories, user_id, limit, session_id)
 
 	def _fallback_save(
 		self,
@@ -143,6 +166,7 @@ class InMemoryMemoryRepository:
 		memory = _build_memory_record(user_id, content, embedding, session_id=session_id, goal=goal)
 		self.storage.append(memory)
 		event_bus.publish("memory_created", memory)
+		cache_invalidate_prefix(_CACHE_PREFIX)
 		return memory
 
 	def get_recent_memories(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
@@ -152,6 +176,19 @@ class InMemoryMemoryRepository:
 			if memory.get("user_id") == user_id and (session_id is None or memory.get("session_id") == session_id)
 		]
 		return filtered[-limit:]
+
+	async def save_memory_async(
+		self,
+		user_id: str,
+		content: str,
+		embedding: Iterable[float],
+		session_id: str | None = None,
+		goal: str | None = None,
+	) -> MemoryRecord:
+		return await asyncio.to_thread(self.save_memory, user_id, content, embedding, session_id, goal)
+
+	async def get_recent_memories_async(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+		return await asyncio.to_thread(self.get_recent_memories, user_id, limit, session_id)
 
 
 @dataclass(slots=True)
@@ -181,11 +218,26 @@ class MemoryService:
 		assert self.repository is not None
 		return self.repository.save_memory(user_id, content, embedding, session_id=session_id, goal=goal)
 
+	async def save_memory_async(
+		self,
+		user_id: str,
+		content: str,
+		embedding: Iterable[float],
+		session_id: str | None = None,
+		goal: str | None = None,
+	) -> MemoryRecord:
+		assert self.repository is not None
+		return await self.repository.save_memory_async(user_id, content, embedding, session_id=session_id, goal=goal)
+
 	def get_recent_memories(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
 		"""Return the latest memories for a user."""
 
 		assert self.repository is not None
 		return self.repository.get_recent_memories(user_id, limit=limit, session_id=session_id)
+
+	async def get_recent_memories_async(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+		assert self.repository is not None
+		return await self.repository.get_recent_memories_async(user_id, limit=limit, session_id=session_id)
 
 
 _DEFAULT_MEMORY_SERVICE = MemoryService()
@@ -203,7 +255,21 @@ def save_memory(
 	return _DEFAULT_MEMORY_SERVICE.save_memory(user_id, content, embedding, session_id=session_id, goal=goal)
 
 
+async def save_memory_async(
+	user_id: str,
+	content: str,
+	embedding: Iterable[float],
+	session_id: str | None = None,
+	goal: str | None = None,
+) -> MemoryRecord:
+	return await _DEFAULT_MEMORY_SERVICE.save_memory_async(user_id, content, embedding, session_id=session_id, goal=goal)
+
+
 def get_recent_memories(user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
 	"""Return recent memories using the default Mongo-backed service."""
 
 	return _DEFAULT_MEMORY_SERVICE.get_recent_memories(user_id, limit=limit, session_id=session_id)
+
+
+async def get_recent_memories_async(user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
+	return await _DEFAULT_MEMORY_SERVICE.get_recent_memories_async(user_id, limit=limit, session_id=session_id)

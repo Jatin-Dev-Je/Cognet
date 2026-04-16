@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from app.core.events.event_bus import event_bus
 from app.infrastructure.db.mongo.collections import ensure_indexes
-from app.utils.logger import logger
+from app.utils.logger import logger, log_event
 
 
 @asynccontextmanager
@@ -20,8 +20,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 	event_bus.subscribe("memory_created", lambda data: logger.info("memory_created: %s", data.get("content", "")))
 	event_bus.subscribe("webhook_received", lambda data: logger.info("webhook_received: %s", data))
 	event_bus.subscribe("connector_synced", lambda data: logger.info("connector_synced: %s", data))
+	log_event("lifespan_start", {"index_plan": ensure_indexes()})
 	logger.info("Cognet startup complete")
 	try:
 		yield
 	finally:
+		log_event("lifespan_stop", {})
 		logger.info("Cognet shutdown complete")

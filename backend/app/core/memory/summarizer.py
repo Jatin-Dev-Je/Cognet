@@ -1,11 +1,10 @@
-"""Memory Summarizer for Cognet.
-
-Purpose:
-Compress multiple memories into a concise summary.
-"""
+"""Memory Summarizer for Cognet."""
 
 from __future__ import annotations
 
+import asyncio
+
+from app.core.ai.prompt import build_summary_prompt
 from app.infrastructure.ai.openai_client import client
 
 
@@ -16,17 +15,14 @@ def summarize_memories(memories: list[dict[str, object]]) -> str:
 	if not texts:
 		return "No long-term memory to summarize."
 
-	prompt = f"""
-Summarize the following user activity into key points:
-
-{texts}
-
-Keep it short and structured.
-""".strip()
-
+	prompt = build_summary_prompt(texts)
 	response = client.chat.completions.create(
 		model="gpt-4o-mini",
 		messages=[{"role": "user", "content": prompt}],
 	)
 
-	return response.choices[0].message.content
+	return str(response.choices[0].message.content)
+
+
+async def summarize_memories_async(memories: list[dict[str, object]]) -> str:
+	return await asyncio.to_thread(summarize_memories, memories)

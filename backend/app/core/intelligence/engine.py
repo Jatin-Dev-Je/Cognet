@@ -6,6 +6,7 @@ Centralize memory, retrieval, agent, and response orchestration.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Callable
@@ -47,6 +48,23 @@ class IntelligenceEngine:
 	session_service: SessionService = field(default_factory=SessionService)
 	goal_service: GoalService = field(default_factory=GoalService)
 	response_generator: ResponseGenerator = default_response_generator
+
+	async def run_intelligence_async(
+		self,
+		user_id: str,
+		message: str,
+		session_id: str | None = None,
+		top_k: int | None = None,
+		memory_limit: int | None = None,
+	) -> dict[str, Any]:
+		return await asyncio.to_thread(
+			self.run_intelligence,
+			user_id,
+			message,
+			session_id,
+			top_k,
+			memory_limit,
+		)
 
 	def run_intelligence(
 		self,
