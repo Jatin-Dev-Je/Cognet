@@ -15,6 +15,7 @@ from app.core.context.builder import build_context, format_context
 from app.core.context.formatter import format_temporal_context
 from app.core.context.temporal_builder import group_by_time
 from app.core.agents.orchestrator import run_agents as run_multi_agents
+from app.core.agents.evolution import evolve_agents
 from app.core.autonomous.runner import run_autonomous
 from app.core.embedding.engine import generate_embedding
 from app.core.ai.prompt import PROMPT_VERSION
@@ -26,6 +27,12 @@ from app.core.inference.intent import detect_intent
 from app.core.inference.reasoning import generate_insights
 from app.core.inference.next_step import suggest_next
 from app.core.prediction.proactive import run_prediction
+from app.core.reasoning.chain import build_memory_chain
+from app.core.reasoning.engine import reason_over_chain
+from app.core.reasoning.expand import expand_context
+from app.core.reasoning.graph import build_reasoning_graph
+from app.core.reasoning.insight import generate_insight
+from app.core.reasoning.order import sort_chain
 from app.core.knowledge_graph.extractor import extract_entities
 from app.core.memory.summarizer import summarize_memories
 from app.core.retrieval.semantic import get_relevant_memories
@@ -117,6 +124,12 @@ class IntelligenceEngine:
 				memories=short_term_memories + long_term_memories,
 				top_k=top_k,
 			)
+			memory_chain = build_memory_chain(recent_memories)
+			ordered_chain = sort_chain(memory_chain)
+			reasoning = reason_over_chain(ordered_chain)
+			insight = generate_insight(ordered_chain)
+			reasoning_context = expand_context(ordered_chain)
+			reasoning_graph = build_reasoning_graph(ordered_chain)
 			structured_context = build_context(relevant_memories)
 			insights = generate_insights(structured_context)
 			intent = detect_intent(message)
@@ -127,6 +140,8 @@ class IntelligenceEngine:
 			prediction = run_prediction(relevant_memories)
 			fused_with_prediction = dict(fused)
 			fused_with_prediction["prediction"] = prediction
+			fused_with_prediction["reasoning"] = reasoning
+			fused_with_prediction["insight"] = insight
 			agent_outputs = run_agents(structured_context, self.agent_service.agents, memories=relevant_memories) if FEATURES.get("agents", True) else []
 			autonomous_output = run_autonomous(user_id, memory, structured_context, prediction)
 			formatted_context = format_context(structured_context)
@@ -139,6 +154,8 @@ class IntelligenceEngine:
 				full_context = f"{full_context}\n\nAgent Outputs:\n" + "\n".join(f"- {output}" for output in agent_outputs)
 			if autonomous_output:
 				full_context = f"{full_context}\n\nAutonomous Output:\n- {autonomous_output}"
+			if reasoning_context:
+				full_context = f"{full_context}\n\nReasoning Context:\n" + "\n".join(f"- {item}" for item in reasoning_context)
 
 			logger.info("Context length: %s", len(full_context))
 			prediction_text = None
@@ -146,6 +163,7 @@ class IntelligenceEngine:
 				prediction_text = f"You will likely {prediction['prediction']} next"
 			fused_with_prediction["prediction_text"] = prediction_text
 			final_output = run_multi_agents(fused_with_prediction)
+			agent_state = evolve_agents()
 			if autonomous_output:
 				final_output = f"{final_output}\n\n{autonomous_output}"
 			response_text = final_output
@@ -177,10 +195,15 @@ class IntelligenceEngine:
 				"agent_outputs": agent_outputs,
 				"autonomous_output": autonomous_output,
 				"multi_agent_output": final_output,
+				"agent_state": agent_state,
 				"full_context": full_context,
 				"temporal_context": temporal_context_text,
 				"next_step": next_step,
 				"prediction": prediction,
+				"reasoning": reasoning,
+				"insight": insight,
+				"reasoning_context": reasoning_context,
+				"reasoning_graph": reasoning_graph,
 				"final_output": final_output,
 				"prompt_preview": prompt_preview,
 				"insights": insights,
@@ -207,7 +230,9 @@ class IntelligenceEngine:
 					"memories_used": len(relevant_memories),
 					"agents_triggered": len(agent_outputs),
 					"autonomous_triggered": bool(autonomous_output),
+					"agent_state": agent_state,
 					"prediction_confidence": prediction.get("confidence", 0),
+					"reasoning_steps": len(ordered_chain),
 					"latency_ms": response_time_ms,
 				},
 			}
@@ -219,5 +244,5 @@ class IntelligenceEngine:
 				"response": "System temporarily unavailable.",
 				"error": str(exc),
 				"prompt_version": PROMPT_VERSION,
-				"trace": {"memories_used": 0, "agents_triggered": 0, "autonomous_triggered": False, "prediction_confidence": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
+				"trace": {"memories_used": 0, "agents_triggered": 0, "autonomous_triggered": False, "prediction_confidence": 0, "reasoning_steps": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
 			}
