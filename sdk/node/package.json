@@ -1,0 +1,9 @@
+{
+  "name": "cognet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cognet Node SDK for sending data into the Cognet runtime.",
+  "main": "./index.js",
+  "type": "commonjs",
+  "dependencies": {}
+}

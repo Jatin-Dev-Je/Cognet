@@ -266,6 +266,32 @@ Interface (Chat / CLI / API)
 
 ---
 
+## 🧰 Runtime Layer
+
+Cognet also ships with a lightweight CLI and Node SDK so developers can integrate it as an infrastructure layer.
+
+### CLI
+
+```bash
+npm link
+cognet init --url http://localhost:8000/api/v1 --token <api-token>
+cognet send "I built API"
+cognet next
+```
+
+### SDK
+
+```js
+const Cognet = require("cognet");
+
+const cognet = new Cognet(process.env.COGNET_API_KEY);
+
+await cognet.send("user completed signup flow");
+await cognet.next();
+```
+
+---
+
 ## ⚙️ Technology Stack
 
 ### Backend

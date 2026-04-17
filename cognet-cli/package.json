@@ -1,0 +1,11 @@
+{
+  "name": "cognet-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cognet CLI for sending messages to the Cognet runtime.",
+  "bin": {
+    "cognet": "./bin/index.js"
+  },
+  "type": "commonjs",
+  "dependencies": {}
+}
