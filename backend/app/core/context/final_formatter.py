@@ -46,10 +46,10 @@ def format_final(
 
 	text += f"\nNext Step:\n{decision}\n"
 
-	if prediction:
-		text += f"\nPrediction:\n{prediction}\n"
-
 	if insight:
 		text += f"\nInsight:\n{insight}\n"
+
+	if prediction:
+		text += f"\nPrediction:\n{prediction}\n"
 
 	return text.strip()

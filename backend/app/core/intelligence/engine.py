@@ -14,6 +14,7 @@ from typing import Any, Callable
 from app.core.context.builder import build_context, format_context
 from app.core.context.formatter import format_temporal_context
 from app.core.context.temporal_builder import group_by_time
+from app.core.cognition.brain import run_cognition
 from app.core.agents.orchestrator import run_agents as run_multi_agents
 from app.core.agents.evolution import evolve_agents
 from app.core.autonomous.runner import run_autonomous
@@ -144,6 +145,14 @@ class IntelligenceEngine:
 			fused_with_prediction["insight"] = insight
 			agent_outputs = run_agents(structured_context, self.agent_service.agents, memories=relevant_memories) if FEATURES.get("agents", True) else []
 			autonomous_output = run_autonomous(user_id, memory, structured_context, prediction)
+			cognition = run_cognition(
+				user_id,
+				message,
+				memories=relevant_memories,
+				context=structured_context,
+				prediction=prediction,
+				temporal=temporal_context,
+			)
 			formatted_context = format_context(structured_context)
 			temporal_context_text = format_temporal_context(temporal_context)
 			session_context = f"Session:\nactive_project: {session.get('active_project')}\nrecent_actions: {session.get('recent_actions', [])}"
@@ -164,6 +173,7 @@ class IntelligenceEngine:
 			fused_with_prediction["prediction_text"] = prediction_text
 			final_output = run_multi_agents(fused_with_prediction)
 			agent_state = evolve_agents()
+			final_output = cognition["response"]
 			if autonomous_output:
 				final_output = f"{final_output}\n\n{autonomous_output}"
 			response_text = final_output
@@ -204,6 +214,7 @@ class IntelligenceEngine:
 				"insight": insight,
 				"reasoning_context": reasoning_context,
 				"reasoning_graph": reasoning_graph,
+				"cognition": cognition,
 				"final_output": final_output,
 				"prompt_preview": prompt_preview,
 				"insights": insights,
@@ -233,6 +244,7 @@ class IntelligenceEngine:
 					"agent_state": agent_state,
 					"prediction_confidence": prediction.get("confidence", 0),
 					"reasoning_steps": len(ordered_chain),
+					"cognition_steps": len(cognition.get("ordered_chain", [])),
 					"latency_ms": response_time_ms,
 				},
 			}
@@ -244,5 +256,5 @@ class IntelligenceEngine:
 				"response": "System temporarily unavailable.",
 				"error": str(exc),
 				"prompt_version": PROMPT_VERSION,
-				"trace": {"memories_used": 0, "agents_triggered": 0, "autonomous_triggered": False, "prediction_confidence": 0, "reasoning_steps": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
+				"trace": {"memories_used": 0, "agents_triggered": 0, "autonomous_triggered": False, "prediction_confidence": 0, "reasoning_steps": 0, "cognition_steps": 0, "latency_ms": int((perf_counter() - started_at) * 1000)},
 			}
