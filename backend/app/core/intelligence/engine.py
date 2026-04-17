@@ -12,9 +12,9 @@ from time import perf_counter
 from typing import Any, Callable
 
 from app.core.context.builder import build_context, format_context
-from app.core.context.final_formatter import format_final
 from app.core.context.formatter import format_temporal_context
 from app.core.context.temporal_builder import group_by_time
+from app.core.agents.orchestrator import run_agents as run_multi_agents
 from app.core.autonomous.runner import run_autonomous
 from app.core.embedding.engine import generate_embedding
 from app.core.ai.prompt import PROMPT_VERSION
@@ -125,6 +125,8 @@ class IntelligenceEngine:
 			decision = decide_action(fused)
 			next_step = suggest_next(structured_context)
 			prediction = run_prediction(relevant_memories)
+			fused_with_prediction = dict(fused)
+			fused_with_prediction["prediction"] = prediction
 			agent_outputs = run_agents(structured_context, self.agent_service.agents, memories=relevant_memories) if FEATURES.get("agents", True) else []
 			autonomous_output = run_autonomous(user_id, memory, structured_context, prediction)
 			formatted_context = format_context(structured_context)
@@ -142,7 +144,8 @@ class IntelligenceEngine:
 			prediction_text = None
 			if prediction.get("prediction") and prediction.get("confidence", 0) > 0.7:
 				prediction_text = f"You will likely {prediction['prediction']} next"
-			final_output = format_final(fused, decision, prediction=prediction_text)
+			fused_with_prediction["prediction_text"] = prediction_text
+			final_output = run_multi_agents(fused_with_prediction)
 			if autonomous_output:
 				final_output = f"{final_output}\n\n{autonomous_output}"
 			response_text = final_output
@@ -173,6 +176,7 @@ class IntelligenceEngine:
 				"formatted_context": formatted_context,
 				"agent_outputs": agent_outputs,
 				"autonomous_output": autonomous_output,
+				"multi_agent_output": final_output,
 				"full_context": full_context,
 				"temporal_context": temporal_context_text,
 				"next_step": next_step,
@@ -181,7 +185,8 @@ class IntelligenceEngine:
 				"prompt_preview": prompt_preview,
 				"insights": insights,
 				"relevant_memories": relevant_memories,
-				"response": format_response(
+				"response": final_output,
+				"formatted_response": format_response(
 					{
 						"project": structured_context.get("project"),
 						"completed": structured_context.get("completed", []),
