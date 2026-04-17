@@ -277,6 +277,7 @@ npm link
 cognet init --url http://localhost:8000/api/v1 --token <api-token>
 cognet send "I built API"
 cognet next
+cognet status
 ```
 
 ### SDK

@@ -7,5 +7,9 @@
     "cognet": "./bin/index.js"
   },
   "type": "commonjs",
-  "dependencies": {}
+  "dependencies": {
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
+    "ora": "^8.2.0"
+  }
 }
