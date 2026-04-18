@@ -1,4 +1,19 @@
-"""LLM pipeline for Cognet."""
+"""
+LLM pipeline for Cognet.
+
+Purpose:
+- Provide synchronous and asynchronous interfaces for generating responses and summaries using LLMs.
+- Standardize prompt construction and output cleaning for downstream consumers.
+
+Inputs:
+- user_input: User's message or query.
+- context: Relevant context string for the LLM.
+- insights: Optional list of insight strings to enrich the prompt.
+- response_generator: Callable that takes a prompt and returns a string response (e.g., OpenAI API call).
+
+Outputs:
+- Cleaned LLM response or summary string.
+"""
 
 from __future__ import annotations
 
