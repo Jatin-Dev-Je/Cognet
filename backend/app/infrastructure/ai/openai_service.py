@@ -11,24 +11,8 @@ from app.core.ai.prompt import build_chat_prompt
 ResponseGenerator = Callable[[str], str]
 
 
-def build_prompt(
-	user_input: str,
-	context: str,
-	insights: Sequence[str] | None = None,
-	temporal_context: str | None = None,
-	next_step: str | None = None,
-) -> str:
-	return build_chat_prompt(user_input, context, insights, temporal_context=temporal_context, next_step=next_step)
-
-
 def build_temporal_prompt(
-	user_input: str,
-	context: str,
-	insights: Sequence[str] | None = None,
-	temporal_context: str | None = None,
-	next_step: str | None = None,
-) -> str:
-	return build_chat_prompt(user_input, context, insights, temporal_context=temporal_context, next_step=next_step)
+
 
 
 def generate_response(
@@ -39,7 +23,7 @@ def generate_response(
 	temporal_context: str | None = None,
 	next_step: str | None = None,
 ) -> str:
-	prompt = build_prompt(user_input, context, insights, temporal_context=temporal_context, next_step=next_step)
+	prompt = build_chat_prompt(user_input, context, insights, temporal_context=temporal_context, next_step=next_step)
 	return clean_output(response_generator(prompt))
 
 
@@ -51,7 +35,7 @@ async def generate_response_async(
 	temporal_context: str | None = None,
 	next_step: str | None = None,
 ) -> str:
-	prompt = build_prompt(user_input, context, insights, temporal_context=temporal_context, next_step=next_step)
+	prompt = build_chat_prompt(user_input, context, insights, temporal_context=temporal_context, next_step=next_step)
 	return clean_output(response_generator(prompt))
 
 
