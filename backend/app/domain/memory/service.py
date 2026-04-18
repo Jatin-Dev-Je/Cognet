@@ -81,8 +81,10 @@ class MongoMemoryRepository(MongoRepository):
 		session_id: str | None = None,
 		goal: str | None = None,
 	) -> MemoryRecord:
-		"""Insert a memory record into MongoDB or return the existing duplicate."""
-
+		"""
+		Insert a memory record into MongoDB or return the existing duplicate.
+		Enhanced error handling and logging for diagnostics.
+		"""
 		try:
 			content = clean_input(content)
 			existing = self.find_one(_memory_query(user_id, content, session_id=session_id))
@@ -94,11 +96,14 @@ class MongoMemoryRepository(MongoRepository):
 			stored_memory = self.insert_one(memory)
 			event_bus.publish("memory_created", stored_memory)
 			cache_invalidate_prefix(_CACHE_PREFIX)
-			logger.info("Saving memory for user_id=%s", user_id)
+			logger.info("Saving memory for user_id=%s, session_id=%s, goal=%s", user_id, session_id, goal)
 			self._enforce_memory_limit(user_id)
 			return stored_memory
 		except Exception as exc:
-			logger.warning("Mongo unavailable, using fallback memory store: %s", exc)
+			logger.error(
+				"Failed to save memory for user_id=%s, session_id=%s, goal=%s. Error: %s", user_id, session_id, goal, exc,
+				exc_info=True
+			)
 			return self._fallback_save(user_id, content, embedding, session_id=session_id, goal=goal)
 
 	def get_recent_memories(self, user_id: str, limit: int = 50, session_id: str | None = None) -> list[MemoryRecord]:
